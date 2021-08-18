@@ -1,0 +1,141 @@
+#define LS_Trig 6          /* trigger pin of left ultrasonic sensor */
+#define LS_Echo 5          /* echo pin of left ultrasonic sensor */
+#define RS_Trig 11         /*trigger pin of right ultrasonic sensor*/
+#define RS_Echo 10         /* echo pin of right ultrasonic sensor */
+#define PWM_left A2        /* pwm signal pin for left side electromagnets */
+#define PWM_right A3       /* pwm signal pin for right side electromagnets */
+#define CLUTCH 8           /* clutch is pressed or not that will be monitored by pin 8 */
+#define BRAKE 9            /* brake is pressed or not that will be monitored by pin 9*/
+
+/* if the clutch is pressed then pin 8 will be HIGH (1) and if it is not pin 8 will be LOW (0)
+   similarly, when brake is applied pin 9 will be HIGH (1) and if it is not the pin 9 will be LOW (0)*/
+   
+void setup() {
+  Serial.begin(9600);
+  Serial.flush();
+  pinMode(LS_Trig, OUTPUT);
+  pinMode(LS_Echo, INPUT);
+  pinMode(RS_Trig, OUTPUT);
+  pinMode(RS_Echo, INPUT);
+  pinMode(PWM_left, OUTPUT);
+  pinMode(PWM_right, OUTPUT);
+  pinMode(CLUTCH, INPUT);
+  pinMode(BRAKE, INPUT);
+}
+
+int LS_trig = 0;
+int LS_echo = 0;
+int RS_trig = 0;
+int RS_echo = 0;
+
+int clutch = 0;
+int brake = 0;
+
+double time_L, time_R, distance_L, distance_R = 0;
+int ch = 0;
+double velocity;            /*This is the velocity of the car. This value will be found from the car odometer*/
+double r;            /*wheel radius*/
+double v = velocity / r;   /* angular velocity of the wheel in rad/s */
+double A;            /*C/S area of the metalic disk*/
+double t;            /* thickness of the metalic disk*/
+double sigma;        /* conductivity of the disk material. constant for a particular metal*/
+double miu_not;      /*magnetic permeability. constant for a particular metal*/
+double n, I, C, R;   /*n is the number of turns in the coil
+                       I is the current flowing through the circuit(10 amps)
+                       C is the circumference of the solinoid
+                       R is the effective resistance of the circuit*/
+double V = I/R;      /* voltage of the bettery*/
+double braking_const = sigma * (r * r) * v *A * t * (miu_not * n / C);
+double i0, ix, Te;    /*i0 = gearbox ratio
+                        ix = final drive gear ration
+                        Te = engine torque*/
+double wheel_torque = (i0 * ix * Te) / 2;
+double left_brake, right_brake = 0;
+
+int left_pulse, right_pulse = 0;
+int mf; /* multiplying factor*/
+
+void apply_emergency_brake(){
+  double v1, v2;
+  while (wheel_torque != 0){
+    double new_wheel_torque = mf * wheel_torque;     
+    for (left_pulse == 0; left_pulse <= 255; left_pulse++){
+      analogWrite(PWM_left, left_pulse);
+      v1= left_pulse;
+      left_brake = braking_const * (v1 * v1);
+    }
+    for (right_pulse == 0; right_pulse <= 255; right_pulse ++){
+      analogWrite(PWM_right, right_pulse);
+      v2 = right_pulse;
+      right_brake = braking_const * (v2 * v2);
+    }
+  }
+}
+
+int apply_smooth_brake(){
+  double v1,v2;
+  while (wheel_torque != 0){
+    for (left_pulse == 0; left_pulse <= 255; left_pulse++){
+      analogWrite(PWM_left, left_pulse);
+      v1= left_pulse;
+      left_brake = braking_const * (v1 * v1);
+    }
+    for (right_pulse == 0; right_pulse <= 255; right_pulse ++){
+      analogWrite(PWM_right, right_pulse);
+      v2 = right_pulse;
+      right_brake = braking_const * (v2 * v2);
+    }
+  }
+}
+
+
+int read_sensors(){
+  digitalWrite(LS_trig,LOW);
+  digitalWrite(RS_trig,LOW);
+  delayMicroseconds(2);
+  digitalWrite(LS_trig,HIGH);
+  digitalWrite(RS_trig,HIGH);
+  delayMicroseconds(2);
+  digitalWrite(LS_trig,LOW);
+  digitalWrite(RS_trig,LOW);
+  delayMicroseconds(2);
+  time_L = pulseIn(LS_echo, HIGH);
+  time_R = pulseIn(RS_echo, HIGH);
+  distance_L = time_L * 340 / 20000;
+  distance_R = time_R * 340 / 20000;
+  if (distance_L != 1 && distance_R != 1){
+    ch = 1;
+  }
+  else if (distance_L = 1 && distance_R != 0){
+    ch = 1;
+  }
+  else if (distance_L != 0 && distance_R == 1){
+    ch = 1;
+  }
+  else if (distance_L == 0 && distance_R == 0){
+    ch = 0;
+  }
+  return ch;
+  delay(20);
+}
+
+void loop() {
+  clutch = digitalRead(CLUTCH);
+  brake = digitalRead(BRAKE);
+  while (clutch == 1){
+    read_sensors();
+    Serial.print(ch);
+    if (ch == 1 && brake == 1){
+      apply_emergency_brake();
+      Serial.println("the braking torques are");
+      Serial.print(int(left_brake));
+      Serial.print(int(right_brake));
+    }
+    else if (ch == 0 && brake == 1){
+      apply_smooth_brake();
+      Serial.println("the braking torques are");
+      Serial.print(int(left_brake));
+      Serial.print(int(right_brake));
+    }
+  }
+}
